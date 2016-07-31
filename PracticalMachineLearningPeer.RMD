@@ -1,0 +1,128 @@
+---
+title: "Practical Machine Learning"
+author: "Federico Chan"
+date: "July 31, 2016"
+output: html_document
+---
+
+##Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+##Data
+The training data for this project are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+The test data are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment.
+
+```{r, echo=FALSE}
+setwd('E:/Cursos/Data Specialization/8_Practical Machine Learning/Peer')
+suppressMessages(library(caret))
+suppressMessages(library(randomForest))
+suppressMessages(library(rattle))
+suppressMessages(library(rpart.plot))
+```
+
+##Loading the data
+```{r}
+#With the if, it will only download the file once
+if (!file.exists("pml-training.csv")) {
+  download.file("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", destfile = "pml-training.csv")
+}
+if (!file.exists("pml-testing.csv")) {
+  download.file("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", destfile = "pml-testing.csv")
+}
+train <- read.csv("pml-training.csv", sep = ",", na.strings = c("", "NA"))
+test  <- read.csv("pml-testing.csv", sep = ",", na.strings = c("", "NA"))
+```
+
+Exploring the data sets we found that `train` and `test` contains 19622 and 20 rows respectively. Both with the 160 variables. The goal will be predict the variable `classes`.
+```{r}
+dim(train)
+dim(test)
+```
+
+##Cleaning the data
+We now will procede to remove the features that has NA values. The first 7 columns will also be removed since they are not numeric or has little predicting power over the `classe` varaible.
+```{r}
+train <- train[, colSums(is.na(train)) == 0]
+test <- test[, colSums(is.na(test)) == 0]
+train <- train[, -c(1:7)]
+test <- test[, -c(1:7)]
+```
+Now the number of variables have been reduce from 160 variables to 53.
+
+##Spliting the data (bootstrap)
+Spliting the data is going to be useful in order train and validate the data before use the test 
+We are spliting the data using 80% for the train and 20% for validate.
+```{r}
+set.seed(123) 
+trainInt <- createDataPartition(train$classe, p = 0.8, list = FALSE)
+train <- train[trainInt, ]
+valid <- train[-trainInt, ]
+```
+
+##Feature selection
+There are features that are highly correlated.
+```{r}
+out = which(names(train) == "classe")
+cor.high = findCorrelation(abs(cor(train[,-out])),0.90)
+cor.feat = names(train)[cor.high]
+train = train[,-cor.high]
+out = which(names(train) == "classe")
+```
+
+The following features have correlations bigger than 0.9 in absolute value
+```{r}
+cor.feat
+```
+
+
+##Algorithms
+###Decision Trees
+```{r}
+control <- trainControl(method = "cv", number = 5)
+decission.fit <- train(classe ~ ., data = train, method = "rpart", 
+                   trControl = control)
+print(decission.fit, digits = 4)
+```
+
+Ploting tree
+```{r}
+fancyRpartPlot(decission.fit$finalModel)
+```
+
+Making the prediction on the validation set and showing confusion matrix
+```{r}
+decissio.predict <- predict(decission.fit, valid)
+(cofusion.tree <- confusionMatrix(valid$classe, decissio.predict))
+```
+
+The accuracy is almost 49.79% which indicates that the predicting power is very bad. Almost equal to making coin flips.
+
+###Random Forest
+```{r}
+set.seed(123)
+train.rf <- randomForest(classe ~ ., data=train)
+pred.rf <- predict(train.rf, valid, type = "class")
+confusion.rf <- confusionMatrix(pred.rf, valid$classe)
+confusion.rf
+```
+
+Generating plot of train random forest
+```{r}
+plot(train.rf)
+```
+
+Now lets check the prediction on the validation set and show the confusion matrix
+```{r}
+valiation <- predict(train.rf, valid)
+(confusion.valid <- confusionMatrix(valid$classe, valiation))
+```
+The accuracy for the validation set is 100%.
+
+Now lets use the test data set to predict the outcome
+```{r}
+prediction <- predict(train.rf, test, type = "class")
+prediction
+```
